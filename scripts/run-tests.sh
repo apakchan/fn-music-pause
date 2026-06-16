@@ -15,8 +15,14 @@ if [[ -z "$hs_bin" ]]; then
   fi
 fi
 
-test_file="$repo_dir/hammerspoon/fn_music_pause_core_test.lua"
-lua_test_file="${test_file//\\/\\\\}"
-lua_test_file="${lua_test_file//\"/\\\"}"
+test_files=(
+  "$repo_dir/hammerspoon/fn_music_pause_core_test.lua"
+  "$repo_dir/hammerspoon/fn_music_pause_player_test.lua"
+  "$repo_dir/hammerspoon/fn_music_pause_config_test.lua"
+)
 
-"$hs_bin" -c "return dofile(\"$lua_test_file\")"
+for test_file in "${test_files[@]}"; do
+  lua_test_file="${test_file//\\/\\\\}"
+  lua_test_file="${lua_test_file//\"/\\\"}"
+  "$hs_bin" -c "return dofile(\"$lua_test_file\")"
+done

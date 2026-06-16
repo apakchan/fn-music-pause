@@ -72,10 +72,27 @@ fnMusicPauseConfig = {
 require("fn_music_pause")
 ```
 
+For app-specific mode, set `apps` to limit which running players may be checked:
+
+```lua
+fnMusicPauseConfig = {
+  mode = "app",
+  mediaKeyFallback = false,
+  apps = {
+    { processName = "Spotify", scriptName = "Spotify", bundleID = "com.spotify.client" },
+    { processName = "Music", scriptName = "Music", bundleID = "com.apple.Music" },
+    { processName = "NetEase Cloud Music", scriptName = "NetEase Cloud Music", bundleID = "com.netease.163music" },
+    { processName = "QQMusic", scriptName = "QQMusic", bundleID = "com.tencent.QQMusicMac" },
+  },
+}
+
+require("fn_music_pause")
+```
+
 Options:
 
 - `mode = "mediaKey"`: default. Uses the system Play/Pause media key.
-- `mode = "app"`: experimental. Attempts app-specific AppleScript control for Spotify and Apple Music.
+- `mode = "app"`: experimental. Attempts app-specific AppleScript control for configured running players.
 - `mediaKeyFallback = true`: when `mode = "app"`, fall back to the media key if no supported app is detected as playing.
 - `alert = false`: disable the Hammerspoon startup alert.
 - `log = false`: disable `~/.hammerspoon/fn-music-pause.log`.

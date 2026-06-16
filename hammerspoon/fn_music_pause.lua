@@ -27,6 +27,7 @@ local function secureInputEnabled()
 end
 
 local player = Player.new({
+  apps = userConfig.apps,
   mode = userConfig.mode or "mediaKey",
   mediaKeyFallback = userConfig.mediaKeyFallback == true,
   logger = log,

@@ -1,11 +1,15 @@
-local source = debug.getinfo(1, "S").source
-local scriptPath = source:sub(1, 1) == "@" and source:sub(2) or source
-local scriptDir = scriptPath:match("^(.*)/[^/]*$") or "."
+local originalPackagePath = package.path
+local originalLoadedCore = package.loaded.fn_music_pause_core
 
-package.path = scriptDir .. "/?.lua;" .. scriptDir .. "/?/init.lua"
-package.loaded.fn_music_pause_core = nil
+local function runTests()
+  local source = debug.getinfo(1, "S").source
+  local scriptPath = source:sub(1, 1) == "@" and source:sub(2) or source
+  local scriptDir = scriptPath:match("^(.*)/[^/]*$") or "."
 
-local core = require("fn_music_pause_core")
+  package.path = scriptDir .. "/?.lua;" .. scriptDir .. "/?/init.lua"
+  package.loaded.fn_music_pause_core = nil
+
+  local core = require("fn_music_pause_core")
 
 local function assertEqual(actual, expected, message)
   if actual ~= expected then
@@ -79,4 +83,15 @@ for _, test in ipairs(tests) do
   test()
 end
 
-return "fn_music_pause_core_test: ok"
+  return "fn_music_pause_core_test: ok"
+end
+
+local ok, result = pcall(runTests)
+package.path = originalPackagePath
+package.loaded.fn_music_pause_core = originalLoadedCore
+
+if not ok then
+  error(result, 0)
+end
+
+return result
