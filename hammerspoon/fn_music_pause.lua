@@ -5,7 +5,7 @@ local M = {}
 
 local userConfig = rawget(_G, "fnMusicPauseConfig") or {}
 local logPath = userConfig.logPath or (hs.configdir .. "/fn-music-pause.log")
-local holdDelay = tonumber(userConfig.holdDelay) or 0.2
+local holdDelay = tonumber(userConfig.holdDelay) or 0.15
 
 if holdDelay < 0 then
   holdDelay = 0

@@ -141,7 +141,7 @@ local function testFnEventReturnsBeforePauseWorkRuns()
     assertEqual(returned, false, "Fn event is not swallowed")
     assertEqual(#handledFlags, 0, "Fn work is deferred until after the event returns")
     assertEqual(#scheduledTimers, 1, "Fn work is scheduled asynchronously")
-    assertEqual(scheduledTimers[1].delay, 0.2, "Fn down uses the default hold delay")
+    assertEqual(scheduledTimers[1].delay, 0.15, "Fn down uses the default hold delay")
 
     scheduledTimers[1].callback()
 

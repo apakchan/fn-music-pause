@@ -9,7 +9,7 @@ This is a small [Hammerspoon](https://www.hammerspoon.org/) utility for macOS vo
 By default, `fn-music-pause` listens for macOS `Fn` flag changes:
 
 - Short `Fn` tap: do nothing, so input methods and system shortcuts can use it normally.
-- Hold `Fn` for at least `0.2` seconds: check supported media apps and browser tabs across open browser windows; pause only if something is currently playing.
+- Hold `Fn` for at least `0.15` seconds: check supported media apps and browser tabs across open browser windows; pause only if something is currently playing.
 - `Fn` up after a hold-triggered pause: resume only the source or browser tabs that were paused.
 
 If the current source is already paused or stopped, pressing `Fn` leaves it paused.
@@ -69,7 +69,7 @@ Optional configuration can be set before `require("fn_music_pause")`:
 ```lua
 fnMusicPauseConfig = {
   mode = "app",
-  holdDelay = 0.2,
+  holdDelay = 0.15,
   alert = true,
   log = true,
 }
@@ -81,7 +81,7 @@ Options:
 
 - `mode = "app"`: default. Uses app-specific AppleScript control for Spotify, Apple Music, Safari, Google Chrome, Brave Browser, Microsoft Edge, and Arc.
 - `mode = "mediaKey"`: compatibility mode. Uses the system Play/Pause media key as a toggle.
-- `holdDelay = 0.2`: seconds to hold `Fn` before media pause starts. Lower it, for example to `0.12` or `0.15`, if media starts pausing too late when you begin speaking.
+- `holdDelay = 0.15`: seconds to hold `Fn` before media pause starts. Raise it, for example to `0.2`, if normal short taps trigger media pausing too often.
 - `mediaKeyFallback = true`: when `mode = "app"`, fall back to the media key only if no supported app is running.
 - `alert = false`: disable the Hammerspoon startup alert.
 - `log = false`: disable `~/.hammerspoon/fn-music-pause.log`.

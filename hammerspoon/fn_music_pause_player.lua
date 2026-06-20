@@ -2,6 +2,7 @@ local M = {}
 
 local didPauseResult = "fn-music-pause:did-pause"
 local didResumeResult = "fn-music-pause:did-resume"
+local axMaxNodes = 800
 
 local defaultApps = {
   { processName = "Spotify", scriptName = "Spotify", bundleID = "com.spotify.client", kind = "mediaApp" },
@@ -24,7 +25,7 @@ end
 
 local function sleepBriefly()
   if hs.timer ~= nil and hs.timer.usleep ~= nil then
-    hs.timer.usleep(80000)
+    hs.timer.usleep(40000)
   end
 end
 
@@ -256,8 +257,12 @@ local function axElementHasAudibleIndicator(element)
   return false
 end
 
-local function axElementLooksAudible(element, depth, visited)
-  if element == nil or depth > 12 then
+local function shouldVisitAxElement(element, visited)
+  if element == nil then
+    return false
+  end
+
+  if (visited._count or 0) >= axMaxNodes then
     return false
   end
 
@@ -265,7 +270,16 @@ local function axElementLooksAudible(element, depth, visited)
   if visited[elementID] then
     return false
   end
+
   visited[elementID] = true
+  visited._count = (visited._count or 0) + 1
+  return true
+end
+
+local function axElementLooksAudible(element, depth, visited)
+  if depth > 12 or not shouldVisitAxElement(element, visited) then
+    return false
+  end
 
   if axElementHasAudibleIndicator(element) then
     return true
@@ -346,22 +360,15 @@ local function addAudibleTab(tabs, seen, windowIndex, tabIndex)
 end
 
 local function axCollectAudibleTabs(element, depth, visited, tabs, seenTabs, windowIndex)
-  if element == nil or depth > 12 then
-    return
+  if depth > 12 or not shouldVisitAxElement(element, visited) then
+    return false
   end
-
-  local elementID = tostring(element)
-  if visited[elementID] then
-    return
-  end
-  visited[elementID] = true
 
   if axAttributeValue(element, "AXRole") == "AXWebArea" then
-    return
+    return false
   end
 
   local childAttributes = {
-    "AXFocusedWindow",
     "AXChildren",
     "AXChildrenInNavigationOrder",
     "AXVisibleChildren",
@@ -371,9 +378,11 @@ local function axCollectAudibleTabs(element, depth, visited, tabs, seenTabs, win
     local childValue = axAttributeValue(element, attribute)
     if type(childValue) == "table" then
       local radioIndex = 0
+      local foundTabStrip = false
 
       for _, child in ipairs(childValue) do
         if type(child) ~= "string" and axAttributeValue(child, "AXRole") == "AXRadioButton" then
+          foundTabStrip = true
           radioIndex = radioIndex + 1
 
           if axElementHasAudibleIndicator(child) then
@@ -382,15 +391,28 @@ local function axCollectAudibleTabs(element, depth, visited, tabs, seenTabs, win
         end
       end
 
+      if foundTabStrip then
+        return true
+      end
+    end
+  end
+
+  for _, attribute in ipairs(childAttributes) do
+    local childValue = axAttributeValue(element, attribute)
+    if type(childValue) == "table" then
       for _, child in ipairs(childValue) do
-        if type(child) ~= "string" then
-          axCollectAudibleTabs(child, depth + 1, visited, tabs, seenTabs, windowIndex)
+        if type(child) ~= "string" and axCollectAudibleTabs(child, depth + 1, visited, tabs, seenTabs, windowIndex) then
+          return true
         end
       end
     elseif childValue ~= nil and type(childValue) ~= "string" then
-      axCollectAudibleTabs(childValue, depth + 1, visited, tabs, seenTabs, windowIndex)
+      if axCollectAudibleTabs(childValue, depth + 1, visited, tabs, seenTabs, windowIndex) then
+        return true
+      end
     end
   end
+
+  return false
 end
 
 local function browserAudibleTabs(app)
