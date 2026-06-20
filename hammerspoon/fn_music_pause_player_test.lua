@@ -292,6 +292,63 @@ local function testBrowserJavaScriptFailureUsesRecursiveAxAudioIndicator()
   end)
 end
 
+local function testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator()
+  local audibleTab = {
+    attributeValue = function(_, attribute)
+      if attribute == "AXRole" then
+        return "AXRadioButton"
+      end
+      if attribute == "AXDescription" then
+        return "Video Tab - 正在播放音频"
+      end
+      return nil
+    end,
+  }
+
+  local function wrapInNavigationOrder(child, levels)
+    if levels == 0 then
+      return child
+    end
+
+    local wrappedChild = wrapInNavigationOrder(child, levels - 1)
+    return {
+      attributeValue = function(_, attribute)
+        if attribute == "AXRole" then
+          return "AXGroup"
+        end
+        if attribute == "AXChildrenInNavigationOrder" then
+          return { wrappedChild }
+        end
+        return nil
+      end,
+    }
+  end
+
+  local root = wrapInNavigationOrder(audibleTab, 9)
+
+  withHsStub({
+    runningApps = { ["Google Chrome"] = { bundleID = "com.google.Chrome" } },
+    axRoots = { ["Google Chrome"] = root },
+    scriptResponses = {
+      { true, "script-error:JavaScript from Apple Events is disabled" },
+    },
+  }, function(state)
+    local Player = loadPlayer()
+    local player = Player.new({
+      mode = "app",
+      apps = {
+        { processName = "Google Chrome", scriptName = "Google Chrome", bundleID = "com.google.Chrome", kind = "chromium" },
+      },
+    })
+
+    local token = player:pauseIfPlaying()
+
+    assertEqual(token.kind, "mediaKey", "deep audible browser tab falls back to media key")
+    assertEqual(token.source, "audibleBrowser", "deep media key token records the audible-browser fallback")
+    assertEqual(#state.events, 2, "deep audible tab fallback posts one media key press")
+  end)
+end
+
 local function testMediaKeyModeRemainsExplicitToggleMode()
   withHsStub(nil, function(state)
     local Player = loadPlayer()
@@ -372,6 +429,7 @@ local tests = {
   testBrowserJavaScriptFailureUsesMediaKeyOnlyWhenAudible,
   testBrowserJavaScriptFailureDoesNotUseMediaKeyWhenNotAudible,
   testBrowserJavaScriptFailureUsesRecursiveAxAudioIndicator,
+  testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator,
   testMediaKeyModeRemainsExplicitToggleMode,
   testSafariBrowserAppPausesAndResumesAllTabsMedia,
   testChromiumBrowserScriptChecksEveryTab,

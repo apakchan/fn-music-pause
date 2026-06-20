@@ -233,7 +233,7 @@ local function axAttributeValue(element, attribute)
 end
 
 local function axElementLooksAudible(element, depth, visited)
-  if element == nil or depth > 7 then
+  if element == nil or depth > 12 then
     return false
   end
 
@@ -257,10 +257,15 @@ local function axElementLooksAudible(element, depth, visited)
     end
   end
 
+  if axAttributeValue(element, "AXRole") == "AXWebArea" then
+    return false
+  end
+
   local childAttributes = {
     "AXFocusedWindow",
     "AXWindows",
     "AXChildren",
+    "AXChildrenInNavigationOrder",
     "AXVisibleChildren",
   }
 
