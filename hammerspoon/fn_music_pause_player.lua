@@ -60,16 +60,45 @@ local function browserResumeJavaScript()
 ]]
 end
 
-local function browserScript(app, javascript)
+local function browserScriptErrorResult(result)
+  return type(result) == "string" and string.sub(result, 1, 13) == "script-error:"
+end
+
+local function browserScript(app, javascript, successResult, emptyResult)
   if app.kind == "safari" then
     return string.format([[
 tell application %s
   if not (exists front window) then
     return "not-running"
   end if
-  return do JavaScript %s in current tab of front window
+
+  set matchedAny to false
+  set lastError to ""
+
+  repeat with browserWindow in windows
+    repeat with browserTab in tabs of browserWindow
+      try
+        set tabResult to do JavaScript %s in browserTab
+        if tabResult is %s then
+          set matchedAny to true
+        end if
+      on error errorMessage
+        set lastError to errorMessage
+      end try
+    end repeat
+  end repeat
+
+  if matchedAny then
+    return %s
+  end if
+
+  if lastError is not "" then
+    return "script-error:" & lastError
+  end if
+
+  return %s
 end tell
-]], appleScriptString(app.scriptName), appleScriptString(javascript))
+]], appleScriptString(app.scriptName), appleScriptString(javascript), appleScriptString(successResult), appleScriptString(successResult), appleScriptString(emptyResult))
   end
 
   return string.format([[
@@ -77,9 +106,34 @@ tell application %s
   if not (exists front window) then
     return "not-running"
   end if
-  return execute front window's active tab javascript %s
+
+  set matchedAny to false
+  set lastError to ""
+
+  repeat with browserWindow in windows
+    repeat with browserTab in tabs of browserWindow
+      try
+        set tabResult to execute browserTab javascript %s
+        if tabResult is %s then
+          set matchedAny to true
+        end if
+      on error errorMessage
+        set lastError to errorMessage
+      end try
+    end repeat
+  end repeat
+
+  if matchedAny then
+    return %s
+  end if
+
+  if lastError is not "" then
+    return "script-error:" & lastError
+  end if
+
+  return %s
 end tell
-]], appleScriptString(app.scriptName), appleScriptString(javascript))
+]], appleScriptString(app.scriptName), appleScriptString(javascript), appleScriptString(successResult), appleScriptString(successResult), appleScriptString(emptyResult))
 end
 
 local function isMediaApp(app)
@@ -178,6 +232,61 @@ local function axAttributeValue(element, attribute)
   return nil
 end
 
+local function axElementLooksAudible(element, depth, visited)
+  if element == nil or depth > 12 then
+    return false
+  end
+
+  local elementID = tostring(element)
+  if visited[elementID] then
+    return false
+  end
+  visited[elementID] = true
+
+  local textAttributes = {
+    "AXTitle",
+    "AXDescription",
+    "AXValue",
+    "AXHelp",
+    "AXLabel",
+  }
+
+  for _, attribute in ipairs(textAttributes) do
+    if titleLooksAudible(axAttributeValue(element, attribute)) then
+      return true
+    end
+  end
+
+  if axAttributeValue(element, "AXRole") == "AXWebArea" then
+    return false
+  end
+
+  local childAttributes = {
+    "AXFocusedWindow",
+    "AXWindows",
+    "AXChildren",
+    "AXChildrenInNavigationOrder",
+    "AXVisibleChildren",
+  }
+
+  for _, attribute in ipairs(childAttributes) do
+    local childValue = axAttributeValue(element, attribute)
+    if type(childValue) == "table" then
+      for _, child in ipairs(childValue) do
+        if axElementLooksAudible(child, depth + 1, visited) then
+          return true
+        end
+      end
+    elseif childValue ~= nil and type(childValue) ~= "string" then
+      if axElementLooksAudible(childValue, depth + 1, visited) then
+        return true
+      end
+    end
+  end
+
+  return false
+end
+
 local function browserLooksAudible(app)
   if hs.axuielement == nil or hs.axuielement.applicationElement == nil then
     return false
@@ -193,21 +302,7 @@ local function browserLooksAudible(app)
     return false
   end
 
-  local focusedWindow = axAttributeValue(root, "AXFocusedWindow")
-  if titleLooksAudible(axAttributeValue(focusedWindow, "AXTitle")) then
-    return true
-  end
-
-  local windows = axAttributeValue(root, "AXWindows")
-  if type(windows) == "table" then
-    for _, window in ipairs(windows) do
-      if titleLooksAudible(axAttributeValue(window, "AXTitle")) then
-        return true
-      end
-    end
-  end
-
-  return false
+  return axElementLooksAudible(root, 0, {})
 end
 
 function M.new(options)
@@ -247,7 +342,7 @@ end tell
   end
 
   function player:pauseBrowserApp(app)
-    local script = browserScript(app, browserPauseJavaScript())
+    local script = browserScript(app, browserPauseJavaScript(), didPauseResult, "not-playing")
     local ok, result, details = hs.osascript.applescript(script)
     local errorMessage = osascriptErrorMessage(details)
 
@@ -259,6 +354,8 @@ end tell
         tostring(result),
         tostring(errorMessage)
       ))
+    elseif browserScriptErrorResult(result) then
+      self.logger(string.format("checked %s media: ok=%s result=%s", app.processName, tostring(ok), tostring(result)))
     else
       self.logger(string.format("checked %s media: ok=%s result=%s", app.processName, tostring(ok), tostring(result)))
     end
@@ -365,7 +462,7 @@ end tell
       local script = browserScript({
         scriptName = token.scriptName,
         kind = token.appKind,
-      }, browserResumeJavaScript())
+      }, browserResumeJavaScript(), didResumeResult, "not-paused")
       local ok, result = hs.osascript.applescript(script)
       self.logger(string.format("resumed %s media: ok=%s result=%s", token.processName, tostring(ok), tostring(result)))
       return ok and result == didResumeResult

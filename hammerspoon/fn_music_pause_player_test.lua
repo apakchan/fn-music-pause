@@ -17,6 +17,12 @@ local function assertContains(value, pattern, message)
   end
 end
 
+local function assertNotContains(value, pattern, message)
+  if string.find(value, pattern, 1, true) ~= nil then
+    error(string.format("%s: expected %q not to contain %q", message, tostring(value), tostring(pattern)), 2)
+  end
+end
+
 local function withHsStub(options, callback)
   options = options or {}
 
@@ -27,6 +33,7 @@ local function withHsStub(options, callback)
     scriptResponses = options.scriptResponses or {},
     runningApps = options.runningApps or {},
     axTitles = options.axTitles or {},
+    axRoots = options.axRoots or {},
   }
 
   local hsStub = {
@@ -53,6 +60,11 @@ local function withHsStub(options, callback)
     },
     axuielement = {
       applicationElement = function(app)
+        local root = state.axRoots[app:name()]
+        if root ~= nil then
+          return root
+        end
+
         local title = state.axTitles[app:name()]
         local window = {
           attributeValue = function(_, attribute)
@@ -91,7 +103,7 @@ local function withHsStub(options, callback)
       applescript = function(script)
         table.insert(state.scripts, script)
         local response = state.scriptResponses[#state.scripts] or { true, "stopped" }
-        return response[1], response[2]
+        return response[1], response[2], response[3]
       end,
     },
   }
@@ -225,6 +237,118 @@ local function testBrowserJavaScriptFailureDoesNotUseMediaKeyWhenNotAudible()
   end)
 end
 
+local function testBrowserJavaScriptFailureUsesRecursiveAxAudioIndicator()
+  local audibleBackgroundTab = {
+    attributeValue = function(_, attribute)
+      if attribute == "AXTitle" then
+        return "Video Tab - 正在播放音频"
+      end
+      return nil
+    end,
+  }
+  local focusedWindow = {
+    attributeValue = function(_, attribute)
+      if attribute == "AXTitle" then
+        return "Current Reading Tab - Google Chrome"
+      end
+      if attribute == "AXChildren" then
+        return { audibleBackgroundTab }
+      end
+      return nil
+    end,
+  }
+  local root = {
+    attributeValue = function(_, attribute)
+      if attribute == "AXFocusedWindow" then
+        return focusedWindow
+      end
+      if attribute == "AXWindows" then
+        return { focusedWindow }
+      end
+      return nil
+    end,
+  }
+
+  withHsStub({
+    runningApps = { ["Google Chrome"] = { bundleID = "com.google.Chrome" } },
+    axRoots = { ["Google Chrome"] = root },
+    scriptResponses = {
+      { true, "script-error:JavaScript from Apple Events is disabled" },
+    },
+  }, function(state)
+    local Player = loadPlayer()
+    local player = Player.new({
+      mode = "app",
+      apps = {
+        { processName = "Google Chrome", scriptName = "Google Chrome", bundleID = "com.google.Chrome", kind = "chromium" },
+      },
+    })
+
+    local token = player:pauseIfPlaying()
+
+    assertEqual(token.kind, "mediaKey", "background audible tab falls back to media key")
+    assertEqual(token.source, "audibleBrowser", "media key token records the audible-browser fallback")
+    assertEqual(#state.events, 2, "background audible tab fallback posts one media key press")
+  end)
+end
+
+local function testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator()
+  local audibleTab = {
+    attributeValue = function(_, attribute)
+      if attribute == "AXRole" then
+        return "AXRadioButton"
+      end
+      if attribute == "AXDescription" then
+        return "Video Tab - 正在播放音频"
+      end
+      return nil
+    end,
+  }
+
+  local function wrapInNavigationOrder(child, levels)
+    if levels == 0 then
+      return child
+    end
+
+    local wrappedChild = wrapInNavigationOrder(child, levels - 1)
+    return {
+      attributeValue = function(_, attribute)
+        if attribute == "AXRole" then
+          return "AXGroup"
+        end
+        if attribute == "AXChildrenInNavigationOrder" then
+          return { wrappedChild }
+        end
+        return nil
+      end,
+    }
+  end
+
+  local root = wrapInNavigationOrder(audibleTab, 9)
+
+  withHsStub({
+    runningApps = { ["Google Chrome"] = { bundleID = "com.google.Chrome" } },
+    axRoots = { ["Google Chrome"] = root },
+    scriptResponses = {
+      { true, "script-error:JavaScript from Apple Events is disabled" },
+    },
+  }, function(state)
+    local Player = loadPlayer()
+    local player = Player.new({
+      mode = "app",
+      apps = {
+        { processName = "Google Chrome", scriptName = "Google Chrome", bundleID = "com.google.Chrome", kind = "chromium" },
+      },
+    })
+
+    local token = player:pauseIfPlaying()
+
+    assertEqual(token.kind, "mediaKey", "deep audible browser tab falls back to media key")
+    assertEqual(token.source, "audibleBrowser", "deep media key token records the audible-browser fallback")
+    assertEqual(#state.events, 2, "deep audible tab fallback posts one media key press")
+  end)
+end
+
 local function testMediaKeyModeRemainsExplicitToggleMode()
   withHsStub(nil, function(state)
     local Player = loadPlayer()
@@ -241,7 +365,7 @@ local function testMediaKeyModeRemainsExplicitToggleMode()
   end)
 end
 
-local function testBrowserAppPausesAndResumesCurrentTabMedia()
+local function testSafariBrowserAppPausesAndResumesAllTabsMedia()
   withHsStub({
     runningApps = { Safari = { bundleID = "com.apple.Safari" } },
     scriptResponses = {
@@ -263,9 +387,38 @@ local function testBrowserAppPausesAndResumesCurrentTabMedia()
     assertEqual(token.kind, "browser", "browser app returns a browser resume token")
     assertEqual(resumed, true, "browser resume reports success")
     assertEqual(#state.events, 0, "browser app does not use the blind media key toggle")
+    assertContains(state.scripts[1], "repeat with browserWindow in windows", "browser pause script checks every window")
+    assertContains(state.scripts[1], "repeat with browserTab in tabs of browserWindow", "browser pause script checks every tab")
+    assertNotContains(state.scripts[1], "current tab of front window", "browser pause script is not limited to the active Safari tab")
     assertContains(state.scripts[1], "querySelectorAll('video,audio')", "browser pause script checks page media")
     assertContains(state.scripts[1], "fnMusicPausePaused", "browser pause script marks media it paused")
     assertContains(state.scripts[2], "fnMusicPausePaused", "browser resume script only resumes media it paused")
+    assertContains(state.scripts[2], "fn-music-pause:did-resume", "browser resume script uses the resume sentinel")
+  end)
+end
+
+local function testChromiumBrowserScriptChecksEveryTab()
+  withHsStub({
+    runningApps = { ["Google Chrome"] = { bundleID = "com.google.Chrome" } },
+    scriptResponses = {
+      { true, "fn-music-pause:did-pause" },
+    },
+  }, function(state)
+    local Player = loadPlayer()
+    local player = Player.new({
+      mode = "app",
+      apps = {
+        { processName = "Google Chrome", scriptName = "Google Chrome", bundleID = "com.google.Chrome", kind = "chromium" },
+      },
+    })
+
+    local token = player:pauseIfPlaying()
+
+    assertEqual(token.kind, "browser", "chromium browser returns a browser resume token")
+    assertContains(state.scripts[1], "repeat with browserWindow in windows", "chromium pause script checks every window")
+    assertContains(state.scripts[1], "repeat with browserTab in tabs of browserWindow", "chromium pause script checks every tab")
+    assertContains(state.scripts[1], "execute browserTab javascript", "chromium pause script runs JavaScript against each tab")
+    assertNotContains(state.scripts[1], "active tab", "chromium pause script is not limited to the active tab")
   end)
 end
 
@@ -275,8 +428,11 @@ local tests = {
   testAppModeReturnsTokenOnlyWhenItActuallyPaused,
   testBrowserJavaScriptFailureUsesMediaKeyOnlyWhenAudible,
   testBrowserJavaScriptFailureDoesNotUseMediaKeyWhenNotAudible,
+  testBrowserJavaScriptFailureUsesRecursiveAxAudioIndicator,
+  testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator,
   testMediaKeyModeRemainsExplicitToggleMode,
-  testBrowserAppPausesAndResumesCurrentTabMedia,
+  testSafariBrowserAppPausesAndResumesAllTabsMedia,
+  testChromiumBrowserScriptChecksEveryTab,
 }
 
 for _, test in ipairs(tests) do
