@@ -8,8 +8,11 @@ This is a small [Hammerspoon](https://www.hammerspoon.org/) utility for macOS vo
 
 By default, `fn-music-pause` listens for macOS `Fn` flag changes:
 
-- `Fn` down: send the system Play/Pause media key once.
-- `Fn` up: send the system Play/Pause media key once again.
+- Short `Fn` tap: do nothing, so input methods and system shortcuts can use it normally.
+- Hold `Fn` for at least `0.2` seconds: check supported media apps and browser tabs; pause only if something is currently playing.
+- `Fn` up after a hold-triggered pause: resume only the source that was paused.
+
+If the current source is already paused or stopped, pressing `Fn` leaves it paused.
 
 The listener does not swallow the `Fn` event, so your voice input method can still receive it.
 
@@ -64,7 +67,8 @@ Optional configuration can be set before `require("fn_music_pause")`:
 
 ```lua
 fnMusicPauseConfig = {
-  mode = "mediaKey",
+  mode = "app",
+  holdDelay = 0.2,
   alert = true,
   log = true,
 }
@@ -74,9 +78,10 @@ require("fn_music_pause")
 
 Options:
 
-- `mode = "mediaKey"`: default. Uses the system Play/Pause media key.
-- `mode = "app"`: experimental. Attempts app-specific AppleScript control for Spotify and Apple Music.
-- `mediaKeyFallback = true`: when `mode = "app"`, fall back to the media key if no supported app is detected as playing.
+- `mode = "app"`: default. Uses app-specific AppleScript control for Spotify, Apple Music, Safari, Google Chrome, Brave Browser, Microsoft Edge, and Arc.
+- `mode = "mediaKey"`: compatibility mode. Uses the system Play/Pause media key as a toggle.
+- `holdDelay = 0.2`: seconds to hold `Fn` before media pause starts. Lower it, for example to `0.12` or `0.15`, if media starts pausing too late when you begin speaking.
+- `mediaKeyFallback = true`: when `mode = "app"`, fall back to the media key only if no supported app is running.
 - `alert = false`: disable the Hammerspoon startup alert.
 - `log = false`: disable `~/.hammerspoon/fn-music-pause.log`.
 - `logPath = "/path/to/log"`: use a custom log path.
@@ -84,11 +89,9 @@ Options:
 
 ## Known Limitations
 
-The default `mediaKey` mode is intentionally simple and low-latency, but it is a toggle. Use it when media is already playing before you press `Fn`.
+The default `app` mode only controls supported apps. Browser support targets media elements in the current tab, and depends on AppleScript/Automation permissions. Safari may also require enabling "Allow JavaScript from Apple Events" in the Develop menu.
 
-If nothing is playing, pressing `Fn` may start the current media source until you release `Fn`.
-
-The experimental `app` mode avoids that toggle behavior for supported apps, but AppleScript support can vary by app and can block if a player is unresponsive.
+The `mediaKey` mode is intentionally simple and low-latency, but it is a toggle. If the current media source is paused, pressing `Fn` can start playback. Use it only when you explicitly want the old media-key behavior.
 
 ## Test
 
