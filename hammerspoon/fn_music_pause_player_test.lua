@@ -106,6 +106,9 @@ local function withHsStub(options, callback)
         return response[1], response[2], response[3]
       end,
     },
+    timer = {
+      usleep = function() end,
+    },
   }
 
   _G.hs = hsStub
@@ -274,6 +277,9 @@ local function testBrowserJavaScriptFailureUsesRecursiveAxAudioIndicator()
     axRoots = { ["Google Chrome"] = root },
     scriptResponses = {
       { true, "script-error:JavaScript from Apple Events is disabled" },
+      { true, "1" },
+      { true, "ok" },
+      { true, "ok" },
     },
   }, function(state)
     local Player = loadPlayer()
@@ -331,6 +337,9 @@ local function testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator()
     axRoots = { ["Google Chrome"] = root },
     scriptResponses = {
       { true, "script-error:JavaScript from Apple Events is disabled" },
+      { true, "1" },
+      { true, "ok" },
+      { true, "ok" },
     },
   }, function(state)
     local Player = loadPlayer()
@@ -343,9 +352,75 @@ local function testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator()
 
     local token = player:pauseIfPlaying()
 
-    assertEqual(token.kind, "mediaKey", "deep audible browser tab falls back to media key")
-    assertEqual(token.source, "audibleBrowser", "deep media key token records the audible-browser fallback")
+    assertEqual(token.kind, "browserMediaKeyTabs", "deep audible browser tab returns a tab-scoped media-key token")
+    assertEqual(token.source, "audibleBrowserTabs", "deep media key token records the audible-browser-tabs fallback")
+    assertEqual(#token.tabs, 1, "deep audible browser tab records one tab")
     assertEqual(#state.events, 2, "deep audible tab fallback posts one media key press")
+  end)
+end
+
+local function testBrowserJavaScriptFailureUsesMediaKeyForEachAudibleTab()
+  local function tab(description)
+    return {
+      attributeValue = function(_, attribute)
+        if attribute == "AXRole" then
+          return "AXRadioButton"
+        end
+        if attribute == "AXDescription" then
+          return description
+        end
+        return nil
+      end,
+    }
+  end
+
+  local tabStrip = {
+    attributeValue = function(_, attribute)
+      if attribute == "AXRole" then
+        return "AXGroup"
+      end
+      if attribute == "AXChildrenInNavigationOrder" then
+        return {
+          tab("Paused Video"),
+          tab("Playing One - 正在播放音频"),
+          tab("Playing Two - playing audio"),
+        }
+      end
+      return nil
+    end,
+  }
+
+  withHsStub({
+    runningApps = { ["Google Chrome"] = { bundleID = "com.google.Chrome" } },
+    axRoots = { ["Google Chrome"] = tabStrip },
+    scriptResponses = {
+      { true, "script-error:JavaScript from Apple Events is disabled" },
+      { true, "1" },
+      { true, "ok" },
+      { true, "ok" },
+      { true, "ok" },
+      { true, "1" },
+      { true, "ok" },
+      { true, "ok" },
+      { true, "ok" },
+    },
+  }, function(state)
+    local Player = loadPlayer()
+    local player = Player.new({
+      mode = "app",
+      apps = {
+        { processName = "Google Chrome", scriptName = "Google Chrome", bundleID = "com.google.Chrome", kind = "chromium" },
+      },
+    })
+
+    local token = player:pauseIfPlaying()
+    player:resume(token)
+
+    assertEqual(token.kind, "browserMediaKeyTabs", "audible browser tabs return a tab-scoped media-key token")
+    assertEqual(#token.tabs, 2, "only currently audible tabs are recorded")
+    assertEqual(token.tabs[1].tabIndex, 2, "first paused tab index is recorded")
+    assertEqual(token.tabs[2].tabIndex, 3, "second paused tab index is recorded")
+    assertEqual(#state.events, 8, "two tabs are paused and resumed with one media key press each")
   end)
 end
 
@@ -430,6 +505,7 @@ local tests = {
   testBrowserJavaScriptFailureDoesNotUseMediaKeyWhenNotAudible,
   testBrowserJavaScriptFailureUsesRecursiveAxAudioIndicator,
   testBrowserJavaScriptFailureUsesDeepTabStripAudioIndicator,
+  testBrowserJavaScriptFailureUsesMediaKeyForEachAudibleTab,
   testMediaKeyModeRemainsExplicitToggleMode,
   testSafariBrowserAppPausesAndResumesAllTabsMedia,
   testChromiumBrowserScriptChecksEveryTab,

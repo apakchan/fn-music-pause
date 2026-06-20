@@ -10,9 +10,10 @@ By default, `fn-music-pause` listens for macOS `Fn` flag changes:
 
 - Short `Fn` tap: do nothing, so input methods and system shortcuts can use it normally.
 - Hold `Fn` for at least `0.2` seconds: check supported media apps and browser tabs across open browser windows; pause only if something is currently playing.
-- `Fn` up after a hold-triggered pause: resume only the source that was paused.
+- `Fn` up after a hold-triggered pause: resume only the source or browser tabs that were paused.
 
 If the current source is already paused or stopped, pressing `Fn` leaves it paused.
+If multiple browser tabs are playing at once, the playing tabs are paused together; already-paused tabs stay paused.
 
 The listener does not swallow the `Fn` event, so your voice input method can still receive it.
 
@@ -90,6 +91,8 @@ Options:
 ## Known Limitations
 
 The default `app` mode only controls supported apps. Browser support targets media elements across open tabs, and depends on AppleScript/Automation permissions. Safari may also require enabling "Allow JavaScript from Apple Events" in the Develop menu.
+
+When Chromium browsers do not allow JavaScript from Apple Events, `fn-music-pause` falls back to audible tab indicators in the browser tab strip and sends media keys only to tabs that were reported as playing audio.
 
 The `mediaKey` mode is intentionally simple and low-latency, but it is a toggle. If the current media source is paused, pressing `Fn` can start playback. Use it only when you explicitly want the old media-key behavior.
 

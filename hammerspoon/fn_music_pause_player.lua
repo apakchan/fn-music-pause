@@ -22,6 +22,12 @@ local function pressPlayPauseKey()
   hs.eventtap.event.newSystemKeyEvent("PLAY", false):post()
 end
 
+local function sleepBriefly()
+  if hs.timer ~= nil and hs.timer.usleep ~= nil then
+    hs.timer.usleep(80000)
+  end
+end
+
 local function browserPauseJavaScript()
   return [[
 (function () {
@@ -232,17 +238,7 @@ local function axAttributeValue(element, attribute)
   return nil
 end
 
-local function axElementLooksAudible(element, depth, visited)
-  if element == nil or depth > 12 then
-    return false
-  end
-
-  local elementID = tostring(element)
-  if visited[elementID] then
-    return false
-  end
-  visited[elementID] = true
-
+local function axElementHasAudibleIndicator(element)
   local textAttributes = {
     "AXTitle",
     "AXDescription",
@@ -255,6 +251,24 @@ local function axElementLooksAudible(element, depth, visited)
     if titleLooksAudible(axAttributeValue(element, attribute)) then
       return true
     end
+  end
+
+  return false
+end
+
+local function axElementLooksAudible(element, depth, visited)
+  if element == nil or depth > 12 then
+    return false
+  end
+
+  local elementID = tostring(element)
+  if visited[elementID] then
+    return false
+  end
+  visited[elementID] = true
+
+  if axElementHasAudibleIndicator(element) then
+    return true
   end
 
   if axAttributeValue(element, "AXRole") == "AXWebArea" then
@@ -287,22 +301,209 @@ local function axElementLooksAudible(element, depth, visited)
   return false
 end
 
-local function browserLooksAudible(app)
+local function browserAxRoot(app)
   if hs.axuielement == nil or hs.axuielement.applicationElement == nil then
-    return false
+    return nil
   end
 
   local runningApp = findRunningApplication(app)
   if runningApp == nil then
-    return false
+    return nil
   end
 
   local ok, root = pcall(hs.axuielement.applicationElement, runningApp)
   if not ok or root == nil then
+    return nil
+  end
+
+  return root
+end
+
+local function browserLooksAudible(app)
+  local root = browserAxRoot(app)
+  if root == nil then
     return false
   end
 
   return axElementLooksAudible(root, 0, {})
+end
+
+local function addAudibleTab(tabs, seen, windowIndex, tabIndex)
+  if windowIndex == nil or tabIndex == nil then
+    return
+  end
+
+  local key = tostring(windowIndex) .. ":" .. tostring(tabIndex)
+  if seen[key] then
+    return
+  end
+
+  seen[key] = true
+  table.insert(tabs, {
+    windowIndex = windowIndex,
+    tabIndex = tabIndex,
+  })
+end
+
+local function axCollectAudibleTabs(element, depth, visited, tabs, seenTabs, windowIndex)
+  if element == nil or depth > 12 then
+    return
+  end
+
+  local elementID = tostring(element)
+  if visited[elementID] then
+    return
+  end
+  visited[elementID] = true
+
+  if axAttributeValue(element, "AXRole") == "AXWebArea" then
+    return
+  end
+
+  local childAttributes = {
+    "AXFocusedWindow",
+    "AXChildren",
+    "AXChildrenInNavigationOrder",
+    "AXVisibleChildren",
+  }
+
+  for _, attribute in ipairs(childAttributes) do
+    local childValue = axAttributeValue(element, attribute)
+    if type(childValue) == "table" then
+      local radioIndex = 0
+
+      for _, child in ipairs(childValue) do
+        if type(child) ~= "string" and axAttributeValue(child, "AXRole") == "AXRadioButton" then
+          radioIndex = radioIndex + 1
+
+          if axElementHasAudibleIndicator(child) then
+            addAudibleTab(tabs, seenTabs, windowIndex, radioIndex)
+          end
+        end
+      end
+
+      for _, child in ipairs(childValue) do
+        if type(child) ~= "string" then
+          axCollectAudibleTabs(child, depth + 1, visited, tabs, seenTabs, windowIndex)
+        end
+      end
+    elseif childValue ~= nil and type(childValue) ~= "string" then
+      axCollectAudibleTabs(childValue, depth + 1, visited, tabs, seenTabs, windowIndex)
+    end
+  end
+end
+
+local function browserAudibleTabs(app)
+  local root = browserAxRoot(app)
+  if root == nil then
+    return {}
+  end
+
+  local tabs = {}
+  local seenTabs = {}
+  local windows = axAttributeValue(root, "AXWindows")
+
+  if type(windows) == "table" and #windows > 0 then
+    for windowIndex, window in ipairs(windows) do
+      axCollectAudibleTabs(window, 0, {}, tabs, seenTabs, windowIndex)
+    end
+  else
+    axCollectAudibleTabs(root, 0, {}, tabs, seenTabs, 1)
+  end
+
+  return tabs
+end
+
+local function browserActiveTabIndex(app, windowIndex)
+  local script = string.format([[
+tell application %s
+  if (count of windows) < %d then
+    return "not-running"
+  end if
+
+  return active tab index of window %d as string
+end tell
+]], appleScriptString(app.scriptName), windowIndex, windowIndex)
+
+  local ok, result = hs.osascript.applescript(script)
+  if ok then
+    return tonumber(result)
+  end
+
+  return nil
+end
+
+local function setBrowserActiveTab(app, tab)
+  local script = string.format([[
+tell application %s
+  if (count of windows) < %d then
+    return "no-window"
+  end if
+
+  if (count of tabs of window %d) < %d then
+    return "no-tab"
+  end if
+
+  set active tab index of window %d to %d
+  return "ok"
+end tell
+]],
+    appleScriptString(app.scriptName),
+    tab.windowIndex,
+    tab.windowIndex,
+    tab.tabIndex,
+    tab.windowIndex,
+    tab.tabIndex
+  )
+
+  local ok, result = hs.osascript.applescript(script)
+  return ok and result == "ok"
+end
+
+local function browserWindowIndices(tabs)
+  local indices = {}
+  local seen = {}
+
+  for _, tab in ipairs(tabs) do
+    if not seen[tab.windowIndex] then
+      seen[tab.windowIndex] = true
+      table.insert(indices, tab.windowIndex)
+    end
+  end
+
+  return indices
+end
+
+local function toggleBrowserTabsWithMediaKey(app, tabs)
+  local originalTabs = {}
+  local toggledTabs = {}
+
+  for _, windowIndex in ipairs(browserWindowIndices(tabs)) do
+    originalTabs[windowIndex] = browserActiveTabIndex(app, windowIndex)
+  end
+
+  for _, tab in ipairs(tabs) do
+    if setBrowserActiveTab(app, tab) then
+      sleepBriefly()
+      pressPlayPauseKey()
+      sleepBriefly()
+      table.insert(toggledTabs, {
+        windowIndex = tab.windowIndex,
+        tabIndex = tab.tabIndex,
+      })
+    end
+  end
+
+  for windowIndex, tabIndex in pairs(originalTabs) do
+    if tabIndex ~= nil then
+      setBrowserActiveTab(app, {
+        windowIndex = windowIndex,
+        tabIndex = tabIndex,
+      })
+    end
+  end
+
+  return toggledTabs
 end
 
 function M.new(options)
@@ -368,6 +569,27 @@ end tell
         bundleID = app.bundleID,
         appKind = app.kind,
       }
+    end
+
+    local audibleTabs = {}
+    if app.kind == "chromium" then
+      audibleTabs = browserAudibleTabs(app)
+    end
+
+    if #audibleTabs > 0 then
+      local toggledTabs = toggleBrowserTabsWithMediaKey(app, audibleTabs)
+      if #toggledTabs > 0 then
+        self.logger(string.format("paused %d audible %s tab(s) with media key fallback", #toggledTabs, app.processName))
+        return {
+          kind = "browserMediaKeyTabs",
+          processName = app.processName,
+          scriptName = app.scriptName,
+          bundleID = app.bundleID,
+          appKind = app.kind,
+          source = "audibleBrowserTabs",
+          tabs = toggledTabs,
+        }
+      end
     end
 
     if browserLooksAudible(app) then
@@ -466,6 +688,20 @@ end tell
       local ok, result = hs.osascript.applescript(script)
       self.logger(string.format("resumed %s media: ok=%s result=%s", token.processName, tostring(ok), tostring(result)))
       return ok and result == didResumeResult
+    end
+
+    if token.kind == "browserMediaKeyTabs" then
+      if not appIsRunning(token) then
+        self.logger(string.format("skipped resume for closed browser %s", token.processName))
+        return false
+      end
+
+      local toggledTabs = toggleBrowserTabsWithMediaKey({
+        scriptName = token.scriptName,
+      }, token.tabs or {})
+
+      self.logger(string.format("resumed %d %s tab(s) with media key", #toggledTabs, token.processName))
+      return #toggledTabs > 0
     end
 
     if token.kind == "mediaKey" then
