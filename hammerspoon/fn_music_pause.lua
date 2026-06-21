@@ -6,6 +6,9 @@ local M = {}
 local userConfig = rawget(_G, "fnMusicPauseConfig") or {}
 local logPath = userConfig.logPath or (hs.configdir .. "/fn-music-pause.log")
 local holdDelay = tonumber(userConfig.holdDelay) or 0.15
+local appleScriptTimeout = tonumber(userConfig.appleScriptTimeout) or nil
+local appleScriptConcurrency = tonumber(userConfig.appleScriptConcurrency) or nil
+local browserTabChunkSize = tonumber(userConfig.browserTabChunkSize) or nil
 
 if holdDelay < 0 then
   holdDelay = 0
@@ -35,6 +38,9 @@ local player = Player.new({
   mode = userConfig.mode or "app",
   mediaKeyFallback = userConfig.mediaKeyFallback == true,
   logger = log,
+  appleScriptTimeout = appleScriptTimeout,
+  appleScriptConcurrency = appleScriptConcurrency,
+  browserTabChunkSize = browserTabChunkSize,
 })
 
 local controller = core.newController(player)

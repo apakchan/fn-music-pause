@@ -14,6 +14,8 @@ By default, `fn-music-pause` listens for macOS `Fn` flag changes:
 
 If the current source is already paused or stopped, pressing `Fn` leaves it paused.
 If multiple browser tabs are playing at once, the playing tabs are paused together; already-paused tabs stay paused.
+For Chromium browsers, audible tab indicators are checked first so the script only touches tabs that are currently playing audio.
+When the frontmost app does not pause anything, remaining supported apps are checked concurrently instead of one by one.
 
 The listener does not swallow the `Fn` event, so your voice input method can still receive it.
 
@@ -70,6 +72,9 @@ Optional configuration can be set before `require("fn_music_pause")`:
 fnMusicPauseConfig = {
   mode = "app",
   holdDelay = 0.15,
+  appleScriptTimeout = 1.0,
+  appleScriptConcurrency = 4,
+  browserTabChunkSize = 4,
   alert = true,
   log = true,
 }
@@ -82,6 +87,9 @@ Options:
 - `mode = "app"`: default. Uses app-specific AppleScript control for Spotify, Apple Music, Safari, Google Chrome, Brave Browser, Microsoft Edge, and Arc.
 - `mode = "mediaKey"`: compatibility mode. Uses the system Play/Pause media key as a toggle.
 - `holdDelay = 0.15`: seconds to hold `Fn` before media pause starts. Raise it, for example to `0.2`, if normal short taps trigger media pausing too often.
+- `appleScriptTimeout = 1.0`: maximum seconds to wait for one AppleScript media-control call before skipping it, so an unresponsive browser cannot freeze Hammerspoon indefinitely.
+- `appleScriptConcurrency = 4`: maximum concurrent AppleScript jobs for app and browser-tab checks.
+- `browserTabChunkSize = 4`: number of browser tabs checked by one tab-level AppleScript job when audible-tab detection is unavailable.
 - `mediaKeyFallback = true`: when `mode = "app"`, fall back to the media key only if no supported app is running.
 - `alert = false`: disable the Hammerspoon startup alert.
 - `log = false`: disable `~/.hammerspoon/fn-music-pause.log`.
