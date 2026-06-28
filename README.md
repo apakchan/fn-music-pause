@@ -64,6 +64,17 @@ require("fn_music_pause")
 
 Reload Hammerspoon.
 
+## Menu Bar Settings
+
+After loading, `fn-music-pause` adds a `Fn Pause` item to the macOS menu bar.
+Use it to choose the trigger key:
+
+- `Fn`
+- `Right Option`
+
+The menu choice is saved with Hammerspoon settings and takes effect immediately.
+You do not need to edit `~/.hammerspoon/init.lua` when changing between supported trigger keys.
+
 ## Configuration
 
 Optional configuration can be set before `require("fn_music_pause")`:
@@ -72,6 +83,7 @@ Optional configuration can be set before `require("fn_music_pause")`:
 fnMusicPauseConfig = {
   mode = "app",
   holdDelay = 0.15,
+  triggerKey = "fn",
   appleScriptTimeout = 1.0,
   appleScriptConcurrency = 4,
   browserTabChunkSize = 4,
@@ -86,7 +98,8 @@ Options:
 
 - `mode = "app"`: default. Uses app-specific AppleScript control for Spotify, Apple Music, Safari, Google Chrome, Brave Browser, Microsoft Edge, and Arc.
 - `mode = "mediaKey"`: compatibility mode. Uses the system Play/Pause media key as a toggle.
-- `holdDelay = 0.15`: seconds to hold `Fn` before media pause starts. Raise it, for example to `0.2`, if normal short taps trigger media pausing too often.
+- `triggerKey = "fn"`: advanced default seed. Use `"rightOption"` to seed right Option before a menu bar setting has been saved. A saved menu bar choice takes precedence.
+- `holdDelay = 0.15`: seconds to hold the trigger key before media pause starts. Raise it, for example to `0.2`, if normal short taps trigger media pausing too often.
 - `appleScriptTimeout = 1.0`: maximum seconds to wait for one AppleScript media-control call before skipping it, so an unresponsive browser cannot freeze Hammerspoon indefinitely.
 - `appleScriptConcurrency = 4`: maximum concurrent AppleScript jobs for app and browser-tab checks.
 - `browserTabChunkSize = 4`: number of browser tabs checked by one tab-level AppleScript job when audible-tab detection is unavailable.
